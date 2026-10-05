@@ -28,18 +28,18 @@ test('polyphony is capped: the oldest voice is stolen', () => {
   assert.equal(s.active.length, 8);
 });
 
-test('self-trigger gate without measurement uses outputLatency + gate', () => {
-  const ctx = fakeCtx(0.04); const s = new Synth(ctx);
-  ctx.currentTime = 1; s.play(60);
-  assert.equal(s.isSelf(1.05, 60), true);
-  assert.equal(s.isSelf(1.2, 60), false);
-  assert.equal(s.isSelf(0.9, 60), false, 'a tap before the note is never "self"');
+test('self-trigger gate without measurement uses outputLatency + gate (performance.now ms)', () => {
+  const s = new Synth(fakeCtx(0.04));
+  const t0 = s.play(60);
+  assert.equal(s.isSelf(t0 + 50, 60), true);
+  assert.equal(s.isSelf(t0 + 200, 60), false);
+  assert.equal(s.isSelf(t0 - 100, 60), false, 'a tap before the note is never "self"');
 });
 
 test('self-trigger gate with a measured round trip is centred on it', () => {
-  const ctx = fakeCtx(0.01); const s = new Synth(ctx);
-  ctx.currentTime = 2; s.play(60);
-  assert.equal(s.isSelf(2.13, 40, 120), true, 'echo arrives at the measured 120 ms');
-  assert.equal(s.isSelf(2.05, 40, 120), false, 'a real tap 50 ms after a note still plays');
-  assert.equal(s.isSelf(2.17, 40, 120), false);
+  const s = new Synth(fakeCtx(0.01));
+  const t0 = s.play(60);
+  assert.equal(s.isSelf(t0 + 130, 40, 120), true, 'echo arrives at the measured 120 ms');
+  assert.equal(s.isSelf(t0 + 50, 40, 120), false, 'a real tap 50 ms after a note still plays');
+  assert.equal(s.isSelf(t0 + 170, 40, 120), false);
 });

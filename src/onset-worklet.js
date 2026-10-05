@@ -48,7 +48,7 @@ class OnsetProcessor extends AudioWorkletProcessor {
       const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
       this.seen++;
       this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
-      if (this.n === 0) this.winStart = base + i;
+      if (this.n === 0) { this.winStart = base + i; this.winSample = this.seen - 1; }
       this.acc += y * y;
       const ay = y < 0 ? -y : y;
       if (ay > this.winPeak) this.winPeak = ay;
@@ -66,14 +66,14 @@ class OnsetProcessor extends AudioWorkletProcessor {
           } else {
             c.peakAmp = Math.max(c.peakAmp, this.winPeak);
             this.lastOnset = c.frame;
-            this.port.postMessage({ type: 'onset', frame: c.frame, ratio: c.peak / c.floor, peak: c.peakAmp, energy: c.peak });
+            this.port.postMessage({ type: 'onset', frame: c.frame, sample: c.sample, ratio: c.peak / c.floor, peak: c.peakAmp, energy: c.peak });
             this.cand = null;
           }
         } else if (this.hold) {
           if (!loud) this.hold = false;
         } else if (this.seen >= this.warmup && loud && e > recent * this.sharp &&
                    this.winStart - this.lastOnset >= this.refractory) {
-          this.cand = { frame: this.winStart, peak: e, peakAmp: this.winPeak, floor: this.floor, rise: 0 };
+          this.cand = { frame: this.winStart, sample: this.winSample, peak: e, peakAmp: this.winPeak, floor: this.floor, rise: 0 };
         }
         // Update the floor slowly; clamp spikes so a tap doesn't drag it up too far.
         // During warm-up adapt fast so the first real sound isn't compared to silence.
@@ -88,7 +88,7 @@ class OnsetProcessor extends AudioWorkletProcessor {
     }
     this.levelCount += ch.length;
     if (this.levelCount >= this.levelEvery) {
-      this.port.postMessage({ type: 'level', rms: Math.sqrt(this.levelAcc / Math.max(1, this.levelN)), floor: Math.sqrt(this.floor) });
+      this.port.postMessage({ type: 'level', rms: Math.sqrt(this.levelAcc / Math.max(1, this.levelN)), floor: Math.sqrt(this.floor), seen: this.seen });
       this.levelCount = 0; this.levelAcc = 0; this.levelN = 0;
     }
     return true;

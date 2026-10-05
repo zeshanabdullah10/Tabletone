@@ -19,13 +19,18 @@ export async function startMic(ctx, { onOnset, onLevel }) {
   const node = new AudioWorkletNode(ctx, 'onset-processor', { numberOfInputs: 1, numberOfOutputs: 0 });
   src.connect(node);
 
+  // Timestamps come from the worklet's own sample counter, anchored to performance.now()
+  // by the least-delayed message seen recently. This does not trust the AudioContext
+  // clock, which was seen freezing for seconds on an Android phone while input kept flowing.
+  const clock = new SampleClock(ctx.sampleRate);
   node.port.onmessage = (e) => {
     const d = e.data;
-    if (d.type === 'onset') {
-      const ctxTime = d.frame / ctx.sampleRate;
-      onOnset({ ctxTime, t: ctxToPerf(ctx, ctxTime), ratio: d.ratio, peak: d.peak });
-    } else if (d.type === 'level') {
+    if (d.type === 'level') {
+      clock.anchor(d.seen, performance.now());
       onLevel && onLevel(d);
+    } else if (d.type === 'onset') {
+      clock.anchor(d.sample, performance.now());
+      onOnset({ t: clock.toPerf(d.sample), ratio: d.ratio, peak: d.peak, ctxFrame: d.frame });
     }
   };
 
@@ -36,12 +41,19 @@ export async function startMic(ctx, { onOnset, onLevel }) {
   };
 }
 
-// Map an AudioContext time (s) to the performance.now() clock (ms).
-// Any constant error left over is absorbed by the latency calibration L.
-export function ctxToPerf(ctx, ctxTime) {
-  const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
-  if (ts && ts.performanceTime) {
-    return ts.performanceTime + (ctxTime - ts.contextTime) * 1000;
+// Maps an input sample index to the performance.now() clock (ms). Each message gives
+// perf ≥ true time of its sample (it can only arrive late), so the smallest
+// (perf − sample time) over a sliding window is the best estimate of the offset.
+// Any constant input latency left over is absorbed by the calibration L.
+export class SampleClock {
+  constructor(sampleRate, windowMs = 4000) { this.fs = sampleRate; this.windowMs = windowMs; this.anchors = []; }
+  anchor(sample, perf) {
+    const off = perf - (sample / this.fs) * 1000;
+    // A restarted counter (new worklet) or a big jump invalidates old anchors.
+    if (this.anchors.length && Math.abs(off - this.offset()) > 1000) this.anchors.length = 0;
+    this.anchors.push({ perf, off });
+    while (this.anchors.length && perf - this.anchors[0].perf > this.windowMs) this.anchors.shift();
   }
-  return performance.now() - (ctx.currentTime - ctxTime) * 1000;
+  offset() { return this.anchors.reduce((m, a) => Math.min(m, a.off), Infinity); }
+  toPerf(sample) { return (sample / this.fs) * 1000 + this.offset(); }
 }

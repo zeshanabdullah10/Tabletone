@@ -17,7 +17,7 @@ export class Synth {
     this.out.gain.value = 0.6;
     const comp = ctx.createDynamicsCompressor();
     this.out.connect(comp).connect(ctx.destination);
-    this.starts = [];       // recent note start ctx times, for the self-trigger gate
+    this.starts = [];       // recent note starts (performance.now() ms), for the self-trigger gate
   }
 
   play(midi, velocity = 0.8) {
@@ -48,9 +48,9 @@ export class Synth {
     const v = { oscs, env, stopAt: end + p.r * 2 };
     oscs[0].onended = () => { env.disconnect(); this.active = this.active.filter((x) => x !== v); };
     this.active.push(v);
-    this.starts.push(t);
+    this.starts.push(performance.now());
     if (this.starts.length > 16) this.starts.shift();
-    return t;
+    return this.starts[this.starts.length - 1];
   }
 
   kill(v, t) {
@@ -59,11 +59,13 @@ export class Synth {
     v.oscs.forEach((o) => { try { o.stop(t + 0.05); } catch (_) {} });
   }
 
-  // True if a mic onset at ctxTime is probably our own note coming back through the speaker.
-  // rttMs: measured speaker→mic round trip (null = unknown → guess from outputLatency).
-  isSelf(ctxTime, gateMs, rttMs = null) {
-    const rtt = rttMs != null ? rttMs / 1000 : (this.ctx.outputLatency || this.ctx.baseLatency || 0.02);
-    const lo = rttMs != null ? rtt - 0.025 : -0.01;
-    return this.starts.some((s) => ctxTime >= s + lo && ctxTime <= s + rtt + gateMs / 1000);
+  // True if a mic onset at tMs (performance.now() clock) is probably our own note coming
+  // back through the speaker. rttMs: measured speaker→mic round trip, or null (unknown →
+  // allow outputLatency + gate after each note).
+  isSelf(tMs, gateMs, rttMs = null) {
+    const out = (this.ctx.outputLatency || this.ctx.baseLatency || 0.02) * 1000;
+    const lo = rttMs != null ? rttMs - 25 : -10;
+    const hi = (rttMs != null ? rttMs : out) + gateMs;
+    return this.starts.some((s) => tMs >= s + lo && tMs <= s + hi);
   }
 }

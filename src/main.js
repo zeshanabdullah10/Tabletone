@@ -34,7 +34,8 @@ let pendingTimer = 0;
 let frameErrors = 0;
 let lastLightWarn = -Infinity;
 let loopback = null;             // speaker→mic echo measurement in progress
-let camLag = 0;                  // capture → landmarks ready (ms), smoothed
+let camLag = 0;
+let lastStats = 0;                  // capture → landmarks ready (ms), smoothed
 let place = null;                // span-gesture state
 let calib = null;                // latency calibration state
 let test = null;                 // accuracy test state
@@ -95,7 +96,9 @@ function frame(t, now) {
 
 function step(t) {
   const fit = kb.fit(video.videoWidth, video.videoHeight);
-  if (fit === 'invalid') { saveKeyboard(); toast('The camera view changed shape. Place the keyboard again.', 4000); enter('place'); }
+  if (fit === 'rescaled') debug.record('fit', { result: fit, w: video.videoWidth, h: video.videoHeight });
+  if (fit === 'invalid') {
+    debug.record('fit', { result: fit, w: video.videoWidth, h: video.videoHeight }); saveKeyboard(); toast('The camera view changed shape. Place the keyboard again.', 4000); enter('place'); }
   hands = tracker.process(video, t, kb.quad ? (x, y) => kb.keyAt(x, y) : null);
   debug.frame(t);
   watchFrameRate(t);
@@ -111,6 +114,11 @@ function step(t) {
   }
   resolvePending();
 
+  if (t - lastStats > 2000) {
+    lastStats = t;
+    debug.record('stats', { fps: debug.fps, inferMs: Math.round(tracker.inferMs), camLag: Math.round(camLag), hands: hands.length,
+      w: video.videoWidth, h: video.videoHeight, mode, delegate: tracker.delegate, ctx: ctx && ctx.state });
+  }
   renderer.showHandles = mode === 'adjust';
   renderer.draw({ hands, keyboard: kb, placing: place && place.quad ? place : null });
   debug.render({
@@ -123,12 +131,13 @@ function watchFrameRate(t) {
   if (lowRes || debug.frames.length < 2 || !hands.length) { slowSince = 0; return; }
   if (debug.fps < 20) {
     if (!slowSince) slowSince = t;
-    else if (t - slowSince > 3000) { lowRes = true; camera.setResolution(640, 480); toast('Lowered camera resolution to keep tracking smooth.'); }
+    else if (t - slowSince > 3000) { lowRes = true; camera.lowerResolution(); toast('Lowered camera resolution to keep tracking smooth.'); }
   } else slowSince = 0;
 }
 
 // ---------- Placement: two-hand span gesture ----------
 function enter(m) {
+  debug.record('mode', { from: mode, to: m });
   mode = m;
   $('skipBtn').hidden = m !== 'calibrate';
   $('doneAdjustBtn').hidden = m !== 'adjust';
@@ -203,8 +212,8 @@ $('skipBtn').addEventListener('click', () => { settings.calibrated = true; save(
 
 // ---------- Audio onsets → fusion ----------
 function onOnset(o) {
-  if (loopback) { loopback.onsets.push(o.ctxTime); return; }
-  const self = synth.isSelf(o.ctxTime, settings.gateMs, settings.rtt);
+  if (loopback) { loopback.onsets.push(o.t); return; }
+  const self = synth.isSelf(o.t, settings.gateMs, settings.rtt);
   debug.record('onset', { tOnset: o.t, ratio: o.ratio, peak: o.peak, self });
   flashMeter();
   if (self) return;
@@ -279,12 +288,13 @@ async function measureLoopback() {
   }
   await sleep(300);
   const diffs = loopback.starts
-    .map((s) => loopback.onsets.find((o) => o >= s && o <= s + 0.3))
-    .map((o, i) => (o == null ? null : (o - loopback.starts[i]) * 1000))
+    .map((s) => loopback.onsets.find((o) => o >= s + 10 && o <= s + 400))   // <10 ms can't be an echo
+    .map((o, i) => (o == null ? null : o - loopback.starts[i]))
     .filter((d) => d != null);
   loopback = null;
-  if (diffs.length >= 2) {
-    diffs.sort((a, b) => a - b);
+  diffs.sort((a, b) => a - b);
+  // Need ≥3 echoes that agree within 40 ms; otherwise don't trust it.
+  if (diffs.length >= 3 && diffs[diffs.length - 1] - diffs[0] <= 40) {
     settings.rtt = diffs[diffs.length >> 1];
   } else settings.rtt = null;
   save();

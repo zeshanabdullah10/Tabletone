@@ -12,8 +12,17 @@ export async function startCamera(video, { width = 1280, height = 720 } = {}) {
   const track = stream.getVideoTracks()[0];
   return {
     stream, track,
-    async setResolution(w, h) {
-      try { await track.applyConstraints({ width: { ideal: w }, height: { ideal: h } }); } catch (_) {}
+    // Halve the resolution while keeping the frame's shape: a portrait phone reports
+    // e.g. 720x1280, and asking for 640x480 would change the aspect and invalidate the keyboard.
+    async lowerResolution() {
+      const s = track.getSettings ? track.getSettings() : {};
+      if (!s.width || !s.height) return;
+      try {
+        await track.applyConstraints({
+          width: { ideal: Math.round(s.width / 2) }, height: { ideal: Math.round(s.height / 2) },
+          aspectRatio: { exact: s.width / s.height }, facingMode: 'user',
+        });
+      } catch (_) {}
     },
     stop() { stream.getTracks().forEach((t) => t.stop()); },
   };
