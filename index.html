@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta name="description" content="Turn any table into a piano: the front camera sees your fingers, the microphone hears the taps.">
+  <title>Mirror Piano</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main id="app">
+    <!-- Start -->
+    <section id="start" class="screen">
+      <h1>Mirror Piano</h1>
+      <p class="lede">Play piano on any table. Your phone watches your fingers and listens for the taps.</p>
+      <figure class="guide">
+        <svg viewBox="0 0 240 120" aria-hidden="true">
+          <rect x="10" y="88" width="220" height="8" rx="2" fill="currentColor" opacity=".35"/>
+          <g transform="rotate(-22 190 88)"><rect x="180" y="30" width="22" height="58" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="191" cy="38" r="2.5" fill="currentColor"/></g>
+          <path d="M170 86 l14 -26" stroke="currentColor" stroke-width="3"/>
+          <path d="M40 86 c10 -14 30 -14 40 0 M90 86 c10 -14 30 -14 40 0" stroke="currentColor" stroke-width="3" fill="none"/>
+        </svg>
+        <figcaption class="small">30–50 cm away · tilted down 20–30° · front camera facing you</figcaption>
+      </figure>
+      <ol class="steps">
+        <li>Stand the phone up facing you, screen toward you, on a bare table.</li>
+        <li>Make sure both hands and the table in front of you are in view.</li>
+        <li>Headphones help: the phone's speaker can trigger the mic.</li>
+      </ol>
+      <button id="startBtn" class="primary">Start</button>
+      <p id="startStatus" class="status" role="status"></p>
+    </section>
+
+    <!-- Stage: live mirrored video with overlays -->
+    <section id="stage" class="screen" hidden>
+      <video id="video" playsinline muted hidden></video>
+      <canvas id="view"></canvas>
+      <div id="fill" class="fill" hidden></div>
+
+      <div id="prompt" class="prompt" role="status"></div>
+
+      <div class="hud top">
+        <div id="meter" class="meter" title="Tap detection level"><span id="meterBar"></span><i id="meterThr"></i></div>
+        <span id="testStats" class="pill" hidden></span>
+        <button id="settingsBtn" class="icon" aria-label="Settings">⚙︎</button>
+      </div>
+
+      <div class="hud bottom">
+        <button id="skipBtn" hidden>Skip</button>
+        <button id="doneAdjustBtn" hidden>Done</button>
+      </div>
+
+      <pre id="debug" class="debug" hidden></pre>
+
+      <dialog id="settings">
+        <form method="dialog">
+          <h2>Settings</h2>
+          <label>Instrument <select id="instrument"></select></label>
+          <label>Scale <select id="scale"></select></label>
+          <div class="row">Octave
+            <button type="button" id="octDown">−</button><output id="octave">4</output><button type="button" id="octUp">+</button>
+          </div>
+          <label>Tap sensitivity <input id="sens" type="range" min="2.5" max="20" step="0.5"><output id="sensOut"></output></label>
+          <label>Self-trigger gate (ms) <input id="gate" type="range" min="0" max="200" step="5"><output id="gateOut"></output></label>
+          <label class="check"><input id="visionOnly" type="checkbox"> Vision-only mode (soft surfaces)</label>
+          <label class="check"><input id="fillLight" type="checkbox"> Screen-edge fill light</label>
+          <label class="check"><input id="debugOn" type="checkbox"> Debug overlay</label>
+          <label class="check"><input id="testOn" type="checkbox"> Accuracy test (tap the yellow key)</label>
+          <p class="small">Latency offset L: <output id="latOut">—</output> ms</p>
+          <div class="buttons">
+            <button type="button" id="replaceBtn">Re-place keyboard</button>
+            <button type="button" id="adjustBtn">Adjust ends</button>
+            <button type="button" id="calibBtn">Calibrate latency</button>
+            <button type="button" id="exportBtn">Export session log</button>
+          </div>
+          <button class="primary" value="close">Close</button>
+        </form>
+      </dialog>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="alert" hidden></div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
