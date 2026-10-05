@@ -60,8 +60,10 @@ export class Synth {
   }
 
   // True if a mic onset at ctxTime is probably our own note coming back through the speaker.
-  isSelf(ctxTime, gateMs) {
-    const lat = (this.ctx.outputLatency || this.ctx.baseLatency || 0.02);
-    return this.starts.some((s) => ctxTime >= s - 0.01 && ctxTime <= s + lat + gateMs / 1000);
+  // rttMs: measured speaker→mic round trip (null = unknown → guess from outputLatency).
+  isSelf(ctxTime, gateMs, rttMs = null) {
+    const rtt = rttMs != null ? rttMs / 1000 : (this.ctx.outputLatency || this.ctx.baseLatency || 0.02);
+    const lo = rttMs != null ? rtt - 0.025 : -0.01;
+    return this.starts.some((s) => ctxTime >= s + lo && ctxTime <= s + rtt + gateMs / 1000);
   }
 }

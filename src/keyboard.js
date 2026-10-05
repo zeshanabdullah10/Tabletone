@@ -14,6 +14,7 @@ export function noteName(midi) { return NAMES[((midi % 12) + 12) % 12] + (Math.f
 export class Keyboard {
   constructor() {
     this.quad = null;          // {nl, nr, fr, fl} each {x,y}
+    this.frame = null;         // {w,h} of the video the quad was placed in
     this.scale = 'major';
     this.octave = 4;
   }
@@ -22,8 +23,44 @@ export class Keyboard {
   midi(i) { return 12 * (this.octave + 1) + SCALES[this.scale].steps[i]; }
   label(i) { return noteName(this.midi(i)); }
 
-  toJSON() { return { quad: this.quad, scale: this.scale, octave: this.octave }; }
-  load(o) { if (o) { this.quad = o.quad || null; this.scale = SCALES[o.scale] ? o.scale : 'major'; this.octave = o.octave ?? 4; } }
+  toJSON() { return { quad: this.quad, frame: this.frame, scale: this.scale, octave: this.octave }; }
+  load(o) {
+    if (!o) return;
+    this.quad = validQuad(o.quad) ? o.quad : null;
+    this.frame = o.frame && o.frame.w > 0 && o.frame.h > 0 ? o.frame : null;
+    if (this.quad && !this.frame) this.quad = null;
+    this.scale = SCALES[o.scale] ? o.scale : 'major';
+    this.octave = Number.isInteger(o.octave) && o.octave >= 1 && o.octave <= 7 ? o.octave : 4;
+  }
+
+  setQuad(quad, w, h) { this.quad = quad; this.frame = { w, h }; }
+
+  // Keep the quad valid when the video size changes. Same aspect (resolution switch):
+  // rescale. Different aspect (rotation, different camera mode): the keyboard no longer
+  // matches the table, so drop it and ask for a re-place.
+  fit(w, h) {
+    if (!this.quad || !w || !h) return 'none';
+    const f = this.frame;
+    if (f.w === w && f.h === h) return 'ok';
+    if (Math.abs(f.w / f.h - w / h) > 0.02) { this.quad = null; this.frame = null; return 'invalid'; }
+    const sx = w / f.w, sy = h / f.h;
+    for (const k of ['nl', 'nr', 'fr', 'fl']) this.quad[k] = { x: this.quad[k].x * sx, y: this.quad[k].y * sy };
+    this.frame = { w, h };
+    return 'rescaled';
+  }
+
+  // Are these two hands a plausible "both hands flat on the table" pose?
+  static isSpanPose(left, right, W, H) {
+    const tipY = (h) => [8, 12, 16, 20].reduce((s, i) => s + h.pts[i].y, 0) / 4;
+    const ext = (h) => {
+      const sc = Math.hypot(h.pts[9].x - h.pts[0].x, h.pts[9].y - h.pts[0].y) || 1;
+      return Math.hypot(h.pts[12].x - h.pts[0].x, h.pts[12].y - h.pts[0].y) / sc;   // ≈1.9 when extended
+    };
+    if (Math.abs(tipY(left) - tipY(right)) > 0.15 * H) return 'level';      // hands at different heights
+    if (ext(left) < 1.5 || ext(right) < 1.5) return 'flat';                // fingers curled
+    if (Math.min(...[4, 8, 12, 16, 20].map((i) => right.pts[i].x)) - Math.max(...[4, 8, 12, 16, 20].map((i) => left.pts[i].x)) < 0.1 * W) return 'apart';
+    return 'ok';
+  }
 
   // Build the quad from two hands laid flat: outer fingertips set the ends,
   // fingertip line sets the playing line, finger length sets key depth.
@@ -83,6 +120,10 @@ export class Keyboard {
   }
 
   corners() { const q = this.quad; return q ? [['nl', q.nl], ['nr', q.nr], ['fr', q.fr], ['fl', q.fl]] : []; }
+}
+
+function validQuad(q) {
+  return q && ['nl', 'nr', 'fr', 'fl'].every((k) => q[k] && Number.isFinite(q[k].x) && Number.isFinite(q[k].y));
 }
 
 const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });

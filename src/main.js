@@ -4,7 +4,7 @@ import { createHandTracker } from './hands.js';
 import { Keyboard, SCALES } from './keyboard.js';
 import { Renderer } from './render.js';
 import { startMic } from './audio-in.js';
-import { scoreTap, pickKeys, StopDetector, estimateLatency, FUSION } from './fusion.js';
+import { scoreTap, pickKeys, StopDetector, Retrigger, fitLatency, FUSION } from './fusion.js';
 import { Synth, PRESETS } from './synth.js';
 import { Debug } from './debug.js';
 
@@ -13,7 +13,7 @@ const STORE = 'mirror-piano-v1';
 
 const settings = {
   instrument: 'piano', sensitivity: 6, gateMs: 60, visionOnly: false,
-  fillLight: false, debug: false, L: 0, calibrated: false, keyboard: null,
+  fillLight: false, debug: false, L: 0, calibrated: false, keyboard: null, rtt: null,
   ...load(),
 };
 
@@ -29,6 +29,12 @@ let mode = 'start';              // start | place | calibrate | play | adjust
 let hands = [];
 const pending = [];              // onsets waiting for camera frames
 const stopDet = new StopDetector();
+const retrig = new Retrigger();
+let pendingTimer = 0;
+let frameErrors = 0;
+let lastLightWarn = -Infinity;
+let loopback = null;             // speaker→mic echo measurement in progress
+let camLag = 0;                  // capture → landmarks ready (ms), smoothed
 let place = null;                // span-gesture state
 let calib = null;                // latency calibration state
 let test = null;                 // accuracy test state
@@ -38,6 +44,8 @@ let wakeLock = null;
 // ---------- Start ----------
 $('startBtn').addEventListener('click', async () => {
   const status = $('startStatus');
+  const missing = unsupported();
+  if (missing) { status.textContent = missing; return; }
   $('startBtn').disabled = true;
   try {
     status.textContent = 'Starting audio…';
@@ -66,25 +74,39 @@ $('startBtn').addEventListener('click', async () => {
     setInterval(checkLight, 2000);
   } catch (err) {
     console.error(err);
-    status.textContent = `Couldn't start: ${err.message || err}. Camera and microphone access are both needed.`;
+    status.textContent = startError(err);
     $('startBtn').disabled = false;
+    if (camera) camera.stop();
+    if (mic) mic.stop();
+    if (ctx) ctx.close().catch(() => {});
+    camera = mic = ctx = null;
   }
 });
 
 // ---------- Per-frame loop ----------
-function frame(t) {
+function frame(t, now) {
+  try { step(t); frameErrors = 0; camLag += 0.1 * (performance.now() - t - camLag); }
+  catch (err) {
+    console.error(err);
+    debug.record('error', { message: String(err && err.message || err) });
+    if (++frameErrors === 30) toast('Hand tracking keeps failing on this device. Try reloading the page.', 8000);
+  }
+}
+
+function step(t) {
+  const fit = kb.fit(video.videoWidth, video.videoHeight);
+  if (fit === 'invalid') { saveKeyboard(); toast('The camera view changed shape. Place the keyboard again.', 4000); enter('place'); }
   hands = tracker.process(video, t, kb.quad ? (x, y) => kb.keyAt(x, y) : null);
   debug.frame(t);
   watchFrameRate(t);
 
   if (mode === 'place') stepPlace(t);
   const stops = stopDet.update(tracker.tracks);
-  if (mode === 'calibrate') for (const s of stops) calib.stops.push(s.t);
   if (mode === 'play' && settings.visionOnly) {
     for (const s of stops) if (s.key != null) {
       const vel = clamp(0.3 + s.down / 15, 0.3, 1);
-      playKeys([s.key], vel);
-      afterNote({ keys: [s.key], via: 'vision', lag: performance.now() - s.t, best: { score: 0, down: s.down } });
+      const keys = playKeys([s.key], vel, s.t);
+      if (keys.length) afterNote({ keys, via: 'vision', lag: performance.now() - s.t, best: { score: 0, down: s.down } });
     }
   }
   resolvePending();
@@ -92,7 +114,7 @@ function frame(t) {
   renderer.showHandles = mode === 'adjust';
   renderer.draw({ hands, keyboard: kb, placing: place && place.quad ? place : null });
   debug.render({
-    infer: tracker.inferMs.toFixed(1) + 'ms', hands: hands.length, L: Math.round(settings.L),
+    infer: tracker.inferMs.toFixed(1) + 'ms', camLag: Math.round(camLag) + 'ms', rtt: settings.rtt == null ? '—' : Math.round(settings.rtt), hands: hands.length, L: Math.round(settings.L),
     res: `${video.videoWidth}x${video.videoHeight}`, mode, k: settings.sensitivity,
   });
 }
@@ -111,12 +133,18 @@ function enter(m) {
   $('skipBtn').hidden = m !== 'calibrate';
   $('doneAdjustBtn').hidden = m !== 'adjust';
   place = null; calib = null;
+  tracker.store.historyMs = m === 'calibrate' ? 30000 : 600;   // calibration needs the whole session
   if (m === 'place') {
     place = { hold: 0, quad: null, prev: null, progress: 0 };
     prompt('Lay both hands flat on the table where the keyboard should go, and hold still.');
   } else if (m === 'calibrate') {
-    calib = { onsets: [], stops: [], started: performance.now() };
-    prompt(`Latency check: tap the ${kb.label(Math.floor(kb.count / 2))} key 10 times at a steady pace.`);
+    calib = { onsets: [], started: performance.now(), ready: false };
+    prompt('Keep your hands still — measuring the speaker echo…');
+    measureLoopback().then(() => {
+      if (!calib) return;
+      calib.ready = true;
+      prompt(`Latency check: tap the ${kb.label(Math.floor(kb.count / 2))} key 10 times at a steady pace.`);
+    });
   } else if (m === 'adjust') {
     prompt('Drag the yellow corners to line the keys up with the table.');
   } else if (m === 'play') {
@@ -125,11 +153,20 @@ function enter(m) {
   }
 }
 
+const SPAN_HINTS = {
+  level: 'Put both hands flat on the table at the same height.',
+  flat: 'Stretch your fingers out flat on the table.',
+  apart: 'Spread your hands further apart — that sets the keyboard width.',
+};
 function stepPlace(t) {
-  if (hands.length !== 2) { place.hold = 0; place.quad = null; place.progress = 0; return; }
+  const resetHold = (msg) => { place.hold = t; place.prev = null; place.quad = null; place.progress = 0; prompt(msg); };
+  if (hands.length !== 2) return resetHold(hands.length ? 'Both hands please — lay them flat at the ends of the keyboard.' : 'Lay both hands flat on the table where the keyboard should go, and hold still.');
   const [l, r] = hands;
+  const W = video.videoWidth, H = video.videoHeight;
+  const pose = Keyboard.isSpanPose(l, r, W, H);
+  if (pose !== 'ok') return resetHold(SPAN_HINTS[pose]);
+  prompt('Hold still…');
   const q = Keyboard.quadFromHands(l, r);
-  const W = video.videoWidth;
   const moved = place.prev ? Math.max(...['nl', 'nr', 'fr', 'fl'].map((k) => Math.hypot(q[k].x - place.prev[k].x, q[k].y - place.prev[k].y))) : Infinity;
   place.prev = q;
   if (moved > W * 0.015 || q.nr.x - q.nl.x < W * 0.15) { place.hold = t; }
@@ -137,7 +174,7 @@ function stepPlace(t) {
   place.quad = place.quad && moved < W * 0.015 ? blendQuad(place.quad, q, 0.2) : q;
   place.progress = clamp((t - place.hold) / 1000, 0, 1);
   if (place.progress >= 1) {
-    kb.quad = place.quad;
+    kb.setQuad(place.quad, W, H);
     saveKeyboard();
     debug.record('place', { quad: kb.quad });
     toast('Keyboard placed. Lift your hands.', 2000);
@@ -166,7 +203,8 @@ $('skipBtn').addEventListener('click', () => { settings.calibrated = true; save(
 
 // ---------- Audio onsets → fusion ----------
 function onOnset(o) {
-  const self = synth.isSelf(o.ctxTime, settings.gateMs);
+  if (loopback) { loopback.onsets.push(o.ctxTime); return; }
+  const self = synth.isSelf(o.ctxTime, settings.gateMs, settings.rtt);
   debug.record('onset', { tOnset: o.t, ratio: o.ratio, peak: o.peak, self });
   flashMeter();
   if (self) return;
@@ -174,7 +212,6 @@ function onOnset(o) {
   if (mode !== 'play' || settings.visionOnly || !kb.quad) return;
   pending.push({ ...o, tTap: o.t - settings.L, received: performance.now() });
   resolvePending();
-  if (pending.length) setTimeout(resolvePending, 40);
 }
 
 function resolvePending() {
@@ -182,20 +219,26 @@ function resolvePending() {
   while (pending.length) {
     const o = pending[0];
     // Wait until the camera has caught up to the tap moment (+ a little), but not forever.
-    const ready = tracker.latestTime() >= o.tTap + Math.min(FUSION.post, 30) || now - o.received > 120;
-    if (!ready) { setTimeout(resolvePending, 10); return; }
+    const ready = tracker.latestTime() >= o.tTap + FUSION.waitAfterTap || now - o.received > FUSION.maxWait;
+    if (!ready) {
+      if (!pendingTimer) pendingTimer = setTimeout(() => { pendingTimer = 0; resolvePending(); }, 10);
+      return;
+    }
     pending.shift();
     const cands = scoreTap(tracker.tracks, o.tTap);
     const keys = pickKeys(cands);
     if (!keys.length) { debug.record('drop', { reason: cands.length ? 'no key' : 'no finger moving down', tTap: o.tTap }); continue; }
     const vel = clamp(0.35 + 0.65 * Math.log10(Math.max(1, o.ratio / settings.sensitivity)) / 1.5, 0.35, 1);
-    playKeys(keys, vel);
-    afterNote({ keys, via: 'audio', lag: performance.now() - o.t, best: cands[0], cands: cands.slice(0, 4), ratio: o.ratio });
+    const played = playKeys(keys, vel, o.tTap);
+    if (!played.length) { debug.record('drop', { reason: 'retrigger', keys }); continue; }
+    afterNote({ keys: played, via: 'audio', lag: performance.now() - o.t, best: cands[0], cands: cands.slice(0, 4), ratio: o.ratio });
   }
 }
 
-function playKeys(keys, vel) {
-  for (const k of keys) { synth.play(kb.midi(k), vel); renderer.press(k, vel); }
+function playKeys(keys, vel, t) {
+  const ok = retrig.filter(keys, t);
+  for (const k of ok) { synth.play(kb.midi(k), vel); renderer.press(k, vel); }
+  return ok;
 }
 
 function afterNote(info) {
@@ -205,13 +248,14 @@ function afterNote(info) {
 
 // ---------- Latency calibration ----------
 function calibOnset(o) {
+  if (!calib.ready) return;
   calib.onsets.push(o.t);
   prompt(`Latency check: ${calib.onsets.length} / 10 taps`);
   if (calib.onsets.length >= 10) {
     // Give the camera a moment to deliver the last stops.
     setTimeout(() => {
       if (!calib) return;
-      const r = estimateLatency(calib.onsets, calib.stops);
+      const r = fitLatency(tracker.tracks, calib.onsets);
       if (r) {
         settings.L = r.L; settings.calibrated = true; save();
         debug.record('calibrate', r);
@@ -224,6 +268,29 @@ function calibOnset(o) {
     }, 300);
   }
 }
+
+// Plays a few notes and times when the mic hears them: the speaker→mic round trip,
+// used to centre the self-trigger gate. No echo heard (headphones) → rtt stays null.
+async function measureLoopback() {
+  loopback = { starts: [], onsets: [] };
+  for (let i = 0; i < 4; i++) {
+    loopback.starts.push(synth.play(kb.midi(i * 2 % kb.count), 1));
+    await sleep(350);
+  }
+  await sleep(300);
+  const diffs = loopback.starts
+    .map((s) => loopback.onsets.find((o) => o >= s && o <= s + 0.3))
+    .map((o, i) => (o == null ? null : (o - loopback.starts[i]) * 1000))
+    .filter((d) => d != null);
+  loopback = null;
+  if (diffs.length >= 2) {
+    diffs.sort((a, b) => a - b);
+    settings.rtt = diffs[diffs.length >> 1];
+  } else settings.rtt = null;
+  save();
+  debug.record('loopback', { diffs, rtt: settings.rtt });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- Accuracy test ----------
 function nextTarget() {
@@ -275,7 +342,7 @@ function checkLight() {
   const d = c.getImageData(0, 0, 32, 18).data;
   let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2];
   const lum = s / (d.length / 4) / 3;
-  if (lum < 45 && !settings.fillLight) toast('It looks dark — turn on a lamp or the screen-edge fill light in Settings.', 3000);
+  if (lum < 45 && !settings.fillLight && performance.now() - lastLightWarn > 30000) lastLightWarn = performance.now(), toast('It looks dark — turn on a lamp or the screen-edge fill light in Settings.', 3000);
 }
 
 // ---------- Settings UI ----------
@@ -322,11 +389,26 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && ctx) { requestWakeLock(); ctx.resume(); if (video.paused) video.play().catch(() => {}); }
 });
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
 // ---------- Helpers ----------
+function unsupported() {
+  if (!window.isSecureContext) return 'Mirror Piano needs a secure (https://) page for camera and microphone access.';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'This browser has no camera/microphone access. Use Chrome on Android.';
+  if (!window.AudioContext || !('audioWorklet' in AudioContext.prototype)) return 'This browser lacks AudioWorklet. Update Chrome or Safari.';
+  if (!window.WebAssembly) return 'This browser lacks WebAssembly, which hand tracking needs.';
+  return '';
+}
+function startError(err) {
+  const n = err && err.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'Camera or microphone permission was denied. Allow both in the browser’s site settings, then tap Start again.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No front camera or microphone found on this device.';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'The camera or microphone is busy in another app. Close it and try again.';
+  return `Couldn't start: ${(err && err.message) || err}. Check your connection the first time (the hand model is downloaded once).`;
+}
+
 function prompt(text) { $('prompt').textContent = text; }
 let toastTimer;
 function toast(text, ms = 4000) {

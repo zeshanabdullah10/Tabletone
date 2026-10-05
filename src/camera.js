@@ -25,17 +25,17 @@ export function onFrames(video, cb) {
   if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
     const step = (now, meta) => {
       if (stopped) return;
-      const t = meta.captureTime || meta.presentationTime || now;
-      cb(t, now);
+      // Re-arm first so an exception in cb can't stop the loop for good.
       video.requestVideoFrameCallback(step);
+      cb(meta.captureTime || meta.presentationTime || now, now);
     };
     video.requestVideoFrameCallback(step);
   } else {
     let lastTime = -1;
     const step = (now) => {
       if (stopped) return;
-      if (video.currentTime !== lastTime) { lastTime = video.currentTime; cb(now, now); }
       requestAnimationFrame(step);
+      if (video.currentTime !== lastTime) { lastTime = video.currentTime; cb(now, now); }
     };
     requestAnimationFrame(step);
   }
