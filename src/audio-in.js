@@ -1,6 +1,6 @@
 // Mic setup, onset worklet bridge, and audio-clock → performance.now() mapping.
 
-export const BUILD = '202610052130';   // set by tools/set-build.mjs; also stamps the worklet URL
+export const BUILD = '202610052230';   // set by tools/set-build.mjs; also stamps the worklet URL
 
 export async function startMic(ctx, { onOnset, onLevel, onSnippet, onStale, channels = 1 }) {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -16,7 +16,7 @@ export async function startMic(ctx, { onOnset, onLevel, onSnippet, onStale, chan
   const processingOn = ['echoCancellation', 'noiseSuppression', 'autoGainControl']
     .filter((k) => settings[k] === true);
 
-  await ctx.audioWorklet.addModule(new URL('./onset-worklet.js?v=202610052130', import.meta.url));
+  await ctx.audioWorklet.addModule(new URL('./onset-worklet.js?v=202610052230', import.meta.url));
   const src = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, 'onset-processor', {
     numberOfInputs: 1, numberOfOutputs: 0,

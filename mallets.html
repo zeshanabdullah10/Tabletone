@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta name="description" content="Mallets: point with your index fingers, tap the table to play.">
+  <title>Table Mallets</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./mallets.css">
+</head>
+<body>
+  <section id="start" class="screen">
+    <h1>Table Mallets</h1>
+    <p class="lede">Your index fingers are the mallets. Point at a key on screen, tap the table, it plays.</p>
+    <ol class="steps">
+      <li>Stand the phone up facing you on the table, about an arm's length away.</li>
+      <li>Rest your hands on the table so both index fingers show on screen.</li>
+      <li>Move a finger over a key — it lights up — then tap the table with that finger.</li>
+    </ol>
+    <label class="row small">Keys
+      <select id="count"><option>5</option><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
+    </label>
+    <button id="startBtn" class="primary">Start</button>
+    <p id="startStatus" class="status" role="status"></p>
+    <p class="small"><a href="./tap.html">Tap Table</a> · <a href="./index.html">Classic camera mode</a></p>
+  </section>
+
+  <section id="stage" class="screen" hidden>
+    <video id="video" playsinline muted hidden></video>
+    <canvas id="view"></canvas>
+    <div class="hud top">
+      <div id="meter" class="meter" title="Tap detection"><span id="meterBar"></span></div>
+      <span id="info" class="pill"></span>
+      <button id="settingsBtn" class="icon" aria-label="Settings">⚙︎</button>
+    </div>
+    <div id="prompt" class="prompt" role="status"></div>
+    <dialog id="settings">
+      <form method="dialog">
+        <h2>Settings</h2>
+        <label>Sound <select id="instrument"></select></label>
+        <label>Scale <select id="scale"></select></label>
+        <label>Keys <select id="count2"><option>5</option><option>6</option><option>8</option><option>10</option><option>12</option></select></label>
+        <label>Tap sensitivity <input id="sens" type="range" min="2.5" max="20" step="0.5"></label>
+        <label class="check"><input id="testOn" type="checkbox"> Accuracy test (tap the yellow key)</label>
+        <label class="check"><input id="debugOn" type="checkbox"> Show timing info</label>
+        <div class="buttons"><button type="button" id="exportBtn">Export log</button></div>
+        <p id="build" class="small"></p>
+        <button class="primary" value="close">Close</button>
+      </form>
+    </dialog>
+  </section>
+  <div id="toast" class="toast" role="alert" hidden></div>
+  <script type="module" src="./src/mallet-main.js?v=202610052230"></script>
+</body>
+</html>

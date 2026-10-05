@@ -1,10 +1,14 @@
 // Service worker: cache-first for the app shell, MediaPipe WASM and the hand model.
 // Bump VERSION on every release so phones pick up the update.
-const VERSION = 'mirror-piano-202610052130';
+const VERSION = 'mirror-piano-202610052230';
 const ASSETS = [
   './',
   './index.html',
   './tap.html',
+  './mallets.html',
+  './mallets.css',
+  './src/mallet-main.js',
+  './src/mallet.js',
   './style.css',
   './tap.css',
   './manifest.webmanifest',

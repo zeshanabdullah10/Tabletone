@@ -5,7 +5,7 @@ import { readFile, writeFile, readdir } from 'node:fs/promises';
 
 const build = process.argv[2] || new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 const root = new URL('../', import.meta.url);
-const files = ['index.html', 'tap.html', 'sw.js',
+const files = ['index.html', 'tap.html', 'mallets.html', 'sw.js',
   ...(await readdir(new URL('src/', root))).filter((f) => f.endsWith('.js')).map((f) => 'src/' + f),
   ...(await readdir(new URL('src/tap/', root))).map((f) => 'src/tap/' + f)];
 

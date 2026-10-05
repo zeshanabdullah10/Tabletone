@@ -1,9 +1,9 @@
 // Tap Table: the phone lies on the table; taps are located by how they sound.
-import { startMic, BUILD } from './audio-in.js?v=202610052130';
-import { tapFeatures, loudness } from './tap/features.js?v=202610052130';
-import { TapClassifier } from './tap/classifier.js?v=202610052130';
-import { Synth, PRESETS } from './synth.js?v=202610052130';
-import { SCALES, noteName } from './keyboard.js?v=202610052130';
+import { startMic, BUILD } from './audio-in.js?v=202610052230';
+import { tapFeatures, loudness } from './tap/features.js?v=202610052230';
+import { TapClassifier } from './tap/classifier.js?v=202610052230';
+import { Synth, PRESETS } from './synth.js?v=202610052230';
+import { SCALES, noteName } from './keyboard.js?v=202610052230';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'tap-table-v1';

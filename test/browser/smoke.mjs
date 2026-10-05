@@ -118,6 +118,22 @@ await check('Tap Table: starts, captures tap snippets and trains from them', asy
   await ctx.close();
 });
 
+await check('Table Mallets: starts with no setup steps, draws keys, hears taps, plays nothing without hands', async () => {
+  const ctx = await browser.newContext({ permissions: ['camera', 'microphone'], viewport: { width: 860, height: 412 } });
+  const p = await ctx.newPage();
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  await p.goto(url + 'mallets.html');
+  await p.click('#startBtn');
+  await p.waitForSelector('#stage:not([hidden])', { timeout: 60000 });
+  await p.evaluate(() => { document.getElementById('debugOn').click(); });
+  await p.waitForFunction(() => /heard [1-9]/.test(document.getElementById('info').textContent), null, { timeout: 30000 });
+  const info = await p.textContent('#info');
+  assert(/played 0/.test(info) && /hands 0/.test(info), info);
+  await p.screenshot({ path: out + 'mallets.png' });
+  assert(!errs.length, errs.join('\n'));
+  await ctx.close();
+});
+
 await browser.close();
 
 await check('denied permissions show a clear message and allow retry', async () => {

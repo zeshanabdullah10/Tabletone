@@ -1,0 +1,4 @@
+#start a { color: var(--accent); }
+#start .row { display: flex; gap: 10px; align-items: center; }
+#start select { background: #252933; border: 1px solid #343a46; border-radius: 8px; padding: 0.3em 0.5em; }
+.hud.top .meter { margin-right: auto; }

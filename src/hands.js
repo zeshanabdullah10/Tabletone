@@ -1,6 +1,6 @@
 // HandLandmarker wrapper; motion tracking lives in tracks.js.
 import { FilesetResolver, HandLandmarker } from '../vendor/mediapipe/vision_bundle.mjs';
-import { TrackStore, TIPS } from './tracks.js?v=202610052130';
+import { TrackStore, TIPS } from './tracks.js?v=202610052230';
 
 export { TIPS };
 

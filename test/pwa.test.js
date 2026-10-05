@@ -9,7 +9,7 @@ const assets = [...sw.matchAll(/'\.\/([^']*)'/g)].map((m) => m[1]);
 async function appFiles() {
   const js = (dir) => readdir(new URL(dir, root)).then((fs) => fs.filter((f) => f.endsWith('.js')).map((f) => dir + f));
   const wasm = (await readdir(new URL('vendor/mediapipe/wasm/', root))).map((f) => 'vendor/mediapipe/wasm/' + f);
-  return [...(await js('src/')), ...(await js('src/tap/')), ...wasm, 'index.html', 'tap.html', 'style.css', 'tap.css',
+  return [...(await js('src/')), ...(await js('src/tap/')), ...wasm, 'index.html', 'tap.html', 'mallets.html', 'style.css', 'tap.css', 'mallets.css',
     'manifest.webmanifest', 'models/hand_landmarker.task', 'vendor/mediapipe/vision_bundle.mjs'];
 }
 
