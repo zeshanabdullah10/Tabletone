@@ -109,8 +109,10 @@ await check('Tap Table: starts, captures tap snippets and trains from them', asy
   await p.waitForSelector('#stage:not([hidden])', { timeout: 30000 });
   assert(/mic/.test(await p.textContent('#mics')), 'mic count shown');
   assert((await p.$$('.key')).length === 4, 'four keys');
+  assert(/build \d+/.test(await p.textContent('#build')), 'build shown');
   // The fake mic beeps; each beep is a "tap" that should fill a training dot.
   await p.waitForFunction(() => document.querySelectorAll('.dots i.on').length >= 2 || /spot 2/.test(document.getElementById('prompt').textContent), null, { timeout: 30000 });
+  assert(/heard [1-9]/.test(await p.textContent('#heard')), 'taps heard counter');
   await p.screenshot({ path: out + 'tap-train.png' });
   assert(!errs.length, errs.join('\n'));
   await ctx.close();

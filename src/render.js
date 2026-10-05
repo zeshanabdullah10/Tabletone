@@ -1,5 +1,5 @@
 // Draws the mirrored camera image, the keyboard in perspective, fingertips and key presses.
-import { TIPS } from './hands.js';
+import { TIPS } from './hands.js?v=202610052130';
 
 const FINGER_COLORS = ['#ffb347', '#7fdbff', '#a0f07a', '#ff85c0', '#c9a0ff'];
 

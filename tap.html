@@ -40,6 +40,7 @@
     <section id="stage" hidden>
       <div class="tap-info">
         <span id="mics" class="pill"></span>
+        <span id="heard" class="pill">heard 0</span>
         <span id="score" class="pill" hidden></span>
         <div id="meter" class="meter" title="Tap level"><span id="meterBar"></span></div>
       </div>
@@ -62,9 +63,10 @@
         <label class="check"><input id="reject" type="checkbox" checked> Ignore taps that match no spot</label>
       </div>
       <pre id="log" class="tap-log"></pre>
+      <p id="build" class="small"></p>
     </section>
   </main>
   <div id="toast" class="toast" role="alert" hidden></div>
-  <script type="module" src="./src/tap-main.js"></script>
+  <script type="module" src="./src/tap-main.js?v=202610052130"></script>
 </body>
 </html>

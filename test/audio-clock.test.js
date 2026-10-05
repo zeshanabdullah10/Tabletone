@@ -27,3 +27,11 @@ test('sample clock resets on a counter restart', () => {
   c.anchor(0, 30000);                                  // worklet recreated, counter back to 0
   assert.ok(Math.abs(c.toPerf(0) - 30000) < 1);
 });
+
+test('regression: messages from an old cached worklet (no sample counter) cannot poison the clock', () => {
+  const c = new SampleClock(48000);
+  for (let i = 0; i < 30; i++) c.anchor(i * 1600, 1000 + i * 1600 / 48 + 3);
+  c.anchor(undefined, 5000);   // old worklet: level message without `seen`
+  c.anchor(NaN, 5000);
+  assert.ok(Number.isFinite(c.toPerf(48000)), 'tap times must never become null');
+});

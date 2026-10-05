@@ -1,12 +1,12 @@
 // Screens, state, and the glue between camera, mic, fusion and sound.
-import { startCamera, onFrames } from './camera.js';
-import { createHandTracker } from './hands.js';
-import { Keyboard, SCALES } from './keyboard.js';
-import { Renderer } from './render.js';
-import { startMic } from './audio-in.js';
-import { scoreTap, pickKeys, StopDetector, Retrigger, fitLatency, FUSION } from './fusion.js';
-import { Synth, PRESETS } from './synth.js';
-import { Debug } from './debug.js';
+import { startCamera, onFrames } from './camera.js?v=202610052130';
+import { createHandTracker } from './hands.js?v=202610052130';
+import { Keyboard, SCALES } from './keyboard.js?v=202610052130';
+import { Renderer } from './render.js?v=202610052130';
+import { startMic } from './audio-in.js?v=202610052130';
+import { scoreTap, pickKeys, StopDetector, Retrigger, fitLatency, FUSION } from './fusion.js?v=202610052130';
+import { Synth, PRESETS } from './synth.js?v=202610052130';
+import { Debug } from './debug.js?v=202610052130';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'mirror-piano-v1';

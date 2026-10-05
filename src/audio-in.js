@@ -1,6 +1,8 @@
 // Mic setup, onset worklet bridge, and audio-clock → performance.now() mapping.
 
-export async function startMic(ctx, { onOnset, onLevel, onSnippet, channels = 1 }) {
+export const BUILD = '202610052130';   // set by tools/set-build.mjs; also stamps the worklet URL
+
+export async function startMic(ctx, { onOnset, onLevel, onSnippet, onStale, channels = 1 }) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: false,
@@ -14,7 +16,7 @@ export async function startMic(ctx, { onOnset, onLevel, onSnippet, channels = 1 
   const processingOn = ['echoCancellation', 'noiseSuppression', 'autoGainControl']
     .filter((k) => settings[k] === true);
 
-  await ctx.audioWorklet.addModule(new URL('./onset-worklet.js', import.meta.url));
+  await ctx.audioWorklet.addModule(new URL('./onset-worklet.js?v=202610052130', import.meta.url));
   const src = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, 'onset-processor', {
     numberOfInputs: 1, numberOfOutputs: 0,
@@ -30,9 +32,10 @@ export async function startMic(ctx, { onOnset, onLevel, onSnippet, channels = 1 
   node.port.onmessage = (e) => {
     const d = e.data;
     if (d.type === 'level') {
-      clock.anchor(d.seen, performance.now());
+      if (Number.isFinite(d.seen)) clock.anchor(d.seen, performance.now());
       onLevel && onLevel(d);
     } else if (d.type === 'onset') {
+      if (!Number.isFinite(d.sample)) { onStale && onStale(); return; }   // an old cached worklet
       clock.anchor(d.sample, performance.now());
       onOnset({ t: clock.toPerf(d.sample), sample: d.sample, ratio: d.ratio, peak: d.peak, ctxFrame: d.frame });
     } else if (d.type === 'snippet') {
@@ -54,6 +57,7 @@ export async function startMic(ctx, { onOnset, onLevel, onSnippet, channels = 1 
 export class SampleClock {
   constructor(sampleRate, windowMs = 4000) { this.fs = sampleRate; this.windowMs = windowMs; this.anchors = []; }
   anchor(sample, perf) {
+    if (!Number.isFinite(sample) || !Number.isFinite(perf)) return;
     const off = perf - (sample / this.fs) * 1000;
     // A restarted counter (new worklet) or a big jump invalidates old anchors.
     if (this.anchors.length && Math.abs(off - this.offset()) > 1000) this.anchors.length = 0;

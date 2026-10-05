@@ -35,3 +35,14 @@ test('no root-relative paths or CDN dependencies in the app', async () => {
     assert.ok(!/cdn\.jsdelivr|storage\.googleapis/.test(s), `${f}: network dependency breaks offline`);
   }
 });
+
+test('every internal module/worklet URL carries the same build stamp as the service worker', async () => {
+  const build = sw.match(/const VERSION = 'mirror-piano-([^']+)'/)[1];
+  const files = (await appFiles()).filter((f) => /\.(html|js)$/.test(f) && !f.startsWith('vendor'));
+  for (const f of files) {
+    const s = await readFile(new URL(f, root), 'utf8');
+    for (const m of s.matchAll(/(?:from |src=|new URL\()['"](\.{1,2}\/(?!vendor|models)[^'"]+\.m?js[^'"]*)['"]/g)) {
+      assert.ok(m[1].endsWith(`?v=${build}`), `${f}: ${m[1]} is not stamped with build ${build} (run node tools/set-build.mjs)`);
+    }
+  }
+});

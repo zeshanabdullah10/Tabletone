@@ -1,9 +1,9 @@
 // Tap Table: the phone lies on the table; taps are located by how they sound.
-import { startMic } from './audio-in.js';
-import { tapFeatures, loudness } from './tap/features.js';
-import { TapClassifier } from './tap/classifier.js';
-import { Synth, PRESETS } from './synth.js';
-import { SCALES, noteName } from './keyboard.js';
+import { startMic, BUILD } from './audio-in.js?v=202610052130';
+import { tapFeatures, loudness } from './tap/features.js?v=202610052130';
+import { TapClassifier } from './tap/classifier.js?v=202610052130';
+import { Synth, PRESETS } from './synth.js?v=202610052130';
+import { SCALES, noteName } from './keyboard.js?v=202610052130';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'tap-table-v1';
@@ -23,9 +23,12 @@ let mode = 'idle';          // idle | train | play
 let trainKey = 0;
 let lastTap = -Infinity;
 let test = null;
+let heard = 0, snipped = 0;
+const STALE_MSG = 'Your browser is running an outdated copy of the app. Close this tab completely and open the link again.';
 const log = [];
 
 $('count').value = String(state.count);
+$('build').textContent = `build ${BUILD}`;
 
 $('go').addEventListener('click', async () => {
   const status = $('status');
@@ -37,7 +40,17 @@ $('go').addEventListener('click', async () => {
     await ctx.resume();
     synth = new Synth(ctx);
     synth.preset = state.instrument;
-    mic = await startMic(ctx, { channels: 2, onOnset: () => {}, onSnippet, onLevel });
+    mic = await startMic(ctx, {
+      channels: 2, onSnippet, onLevel,
+      onStale: () => toast(STALE_MSG, 10000),
+      onOnset: () => {
+        heard++;
+        $('heard').textContent = `heard ${heard}`;
+        // Every heard tap should produce a snippet within ~40 ms; if not, files are mismatched.
+        const before = snipped;
+        setTimeout(() => { if (snipped === before && heard > 2) toast(STALE_MSG, 10000); }, 600);
+      },
+    });
     mic.setSensitivity(state.sensitivity);
     const ch = mic.settings.channelCount || 1;
     $('mics').textContent = ch >= 2 ? '2 mics — best accuracy' : '1 mic';
@@ -122,6 +135,7 @@ function enterPlay() {
 }
 
 function onSnippet(sn) {
+  snipped++;
   if (synth.isSelf(sn.t, 80)) return addLog('ignored: own note');
   const gap = sn.t - lastTap;
   if (gap < (mode === 'train' ? TRAIN_GAP_MS : PLAY_GAP_MS)) return;
