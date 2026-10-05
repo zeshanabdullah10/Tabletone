@@ -1,6 +1,6 @@
 // Service worker: cache-first for the app shell, MediaPipe WASM and the hand model.
 // Bump VERSION on every release so phones pick up the update.
-const VERSION = 'mirror-piano-v1.3.0';
+const VERSION = 'mirror-piano-v1.4.0';
 const ASSETS = [
   './',
   './index.html',
@@ -45,13 +45,18 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// App code (html/js/css/manifest): network first, so an online phone always runs the
+// latest version and the cache is only the offline fallback. Big immutable files
+// (MediaPipe WASM, the hand model): cache first.
+const IMMUTABLE = /\/(vendor|models)\//;
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then((res) => {
-      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
-      return res;
-    })),
-  );
+  const put = (res) => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); } return res; };
+  if (IMMUTABLE.test(new URL(req.url).pathname)) {
+    e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then(put)));
+  } else {
+    e.respondWith(fetch(req).then(put).catch(() => caches.match(req, { ignoreSearch: true })));
+  }
 });
