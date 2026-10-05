@@ -44,3 +44,24 @@ and tune `FUSION` in `src/fusion.js` from the exported logs.
 `npm test` — 50 unit/integration tests (keyboard geometry, tracking, fusion accuracy on simulated
 sessions, calibration, onset detector on synthetic audio, synth gate, PWA/offline invariants).
 `npm run test:browser` — Chromium with fake camera/mic: start flow, restore, corrupt storage, offline, denied permissions.
+
+## Alternative approaches (after the first on-device test)
+
+The camera mode is limited by physics, not tuning: a front camera sees millimetres of
+fingertip travel at 15–30 fps with fingers hiding each other, and the key (camera) and
+timing (mic) must be joined across a ~145 ms calibrated offset.
+
+| Approach | Key from | Timing from | Latency | Setup | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| Mirror (front camera) | hand landmarks | mic onset | camera lag (100–150 ms) | phone on a stand | finicky; kept as a mode |
+| **Tap Table** (built) | how the tap sounds at each spot (k-NN on spectra, 2-mic differences) | mic onset | ~25 ms + output | phone flat, train ~6 taps/spot | most promising; self-measures accuracy |
+| Top-down camera + printed sheet | fingertip x/y over sheet | mic onset | camera lag | stand above the table | good geometry, awkward setup |
+| 2-mic delay only | which mic hears it first | mic | ~25 ms | phone flat | 1-D, few phones expose 2 mics |
+| Phone motion sensors | — | — | — | — | browser gives ~60 Hz: too slow |
+
+Tap Table findings from simulation (`test/tap.test.js`): spectra must ignore loudness and
+finger softness (envelope removed, only fine resonance structure kept); per-dimension
+standardisation amplified noise and was dropped. With the phone in the *middle* of the row,
+mirror-image spots can sound alike to one mic, so the setup guide puts the phone at one end.
+Whether real tables separate spots well enough is unknown until tried: the app's self-test
+score after training answers that in ~2 minutes.

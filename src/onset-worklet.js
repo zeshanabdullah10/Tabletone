@@ -28,6 +28,11 @@ class OnsetProcessor extends AudioWorkletProcessor {
     this.hold = false;                                // rejected swell: wait for it to fall first
     this.prevE = [0, 0, 0];
     this.seen = 0;                                    // samples processed (context may predate the mic)
+    // Snippet capture (Tap Table mode): raw audio of every channel around each onset.
+    this.snipOn = false;
+    this.snipPre = 64; this.snipPost = 1536;
+    this.ringSize = 8192; this.rings = [];
+    this.snips = [];                                  // pending {sample, until}
     this.levelEvery = Math.round(fs / 30);
     this.levelCount = 0; this.levelAcc = 0; this.levelN = 0;
 
@@ -36,15 +41,19 @@ class OnsetProcessor extends AudioWorkletProcessor {
       if (d.k != null) this.k = d.k;
       if (d.minEnergy != null) this.minEnergy = d.minEnergy;
       if (d.sharp != null) this.sharp = d.sharp;
+      if (d.snippet != null) { this.snipOn = !!d.snippet; if (d.pre) this.snipPre = d.pre; if (d.post) this.snipPost = d.post; }
     };
   }
 
   process(inputs) {
-    const ch = inputs[0] && inputs[0][0];
+    const chans = inputs[0];
+    const ch = chans && chans[0];
     if (!ch) return true;
     const base = currentFrame;
+    if (this.snipOn) while (this.rings.length < chans.length) this.rings.push(new Float32Array(this.ringSize));
     for (let i = 0; i < ch.length; i++) {
       const x = ch[i];
+      if (this.snipOn) { const w = this.seen % this.ringSize; for (let c = 0; c < chans.length; c++) this.rings[c][w] = chans[c][i]; }
       const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
       this.seen++;
       this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
@@ -66,6 +75,7 @@ class OnsetProcessor extends AudioWorkletProcessor {
           } else {
             c.peakAmp = Math.max(c.peakAmp, this.winPeak);
             this.lastOnset = c.frame;
+            if (this.snipOn) this.snips.push({ sample: c.sample, until: c.sample + this.snipPost });
             this.port.postMessage({ type: 'onset', frame: c.frame, sample: c.sample, ratio: c.peak / c.floor, peak: c.peakAmp, energy: c.peak });
             this.cand = null;
           }
@@ -85,6 +95,15 @@ class OnsetProcessor extends AudioWorkletProcessor {
         this.prevE[2] = this.prevE[1]; this.prevE[1] = this.prevE[0]; this.prevE[0] = e;
         this.acc = 0; this.n = 0; this.winPeak = 0;
       }
+    }
+    while (this.snips.length && this.seen >= this.snips[0].until) {
+      const s = this.snips.shift(), len = this.snipPre + this.snipPost, from = s.sample - this.snipPre;
+      const channels = this.rings.slice(0, chans.length).map((ring) => {
+        const out = new Float32Array(len);
+        for (let j = 0; j < len; j++) out[j] = ring[(from + j + this.ringSize * 4) % this.ringSize];
+        return out;
+      });
+      this.port.postMessage({ type: 'snippet', sample: s.sample, pre: this.snipPre, channels }, channels.map((c) => c.buffer));
     }
     this.levelCount += ch.length;
     if (this.levelCount >= this.levelEvery) {

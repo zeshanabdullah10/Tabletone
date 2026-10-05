@@ -1,12 +1,12 @@
 // Mic setup, onset worklet bridge, and audio-clock → performance.now() mapping.
 
-export async function startMic(ctx, { onOnset, onLevel }) {
+export async function startMic(ctx, { onOnset, onLevel, onSnippet, channels = 1 }) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: false,
-      channelCount: 1,
+      channelCount: channels > 1 ? { ideal: channels } : 1,
     },
   });
   const track = stream.getAudioTracks()[0];
@@ -16,7 +16,11 @@ export async function startMic(ctx, { onOnset, onLevel }) {
 
   await ctx.audioWorklet.addModule(new URL('./onset-worklet.js', import.meta.url));
   const src = ctx.createMediaStreamSource(stream);
-  const node = new AudioWorkletNode(ctx, 'onset-processor', { numberOfInputs: 1, numberOfOutputs: 0 });
+  const node = new AudioWorkletNode(ctx, 'onset-processor', {
+    numberOfInputs: 1, numberOfOutputs: 0,
+    channelCount: Math.max(1, settings.channelCount || 1), channelCountMode: 'explicit', channelInterpretation: 'discrete',
+  });
+  if (onSnippet) node.port.postMessage({ snippet: true });
   src.connect(node);
 
   // Timestamps come from the worklet's own sample counter, anchored to performance.now()
@@ -30,7 +34,9 @@ export async function startMic(ctx, { onOnset, onLevel }) {
       onLevel && onLevel(d);
     } else if (d.type === 'onset') {
       clock.anchor(d.sample, performance.now());
-      onOnset({ t: clock.toPerf(d.sample), ratio: d.ratio, peak: d.peak, ctxFrame: d.frame });
+      onOnset({ t: clock.toPerf(d.sample), sample: d.sample, ratio: d.ratio, peak: d.peak, ctxFrame: d.frame });
+    } else if (d.type === 'snippet') {
+      onSnippet && onSnippet({ sample: d.sample, t: clock.toPerf(d.sample), pre: d.pre, channels: d.channels, sampleRate: ctx.sampleRate });
     }
   };
 

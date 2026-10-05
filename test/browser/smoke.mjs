@@ -99,6 +99,23 @@ await check('service worker caches everything; app shell loads offline', async (
   await ctx.close();
 });
 
+await check('Tap Table: starts, captures tap snippets and trains from them', async () => {
+  const ctx = await browser.newContext({ permissions: ['microphone'], viewport: { width: 412, height: 860 } });
+  const p = await ctx.newPage();
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  await p.goto(url + 'tap.html');
+  await p.selectOption('#count', '4');
+  await p.click('#go');
+  await p.waitForSelector('#stage:not([hidden])', { timeout: 30000 });
+  assert(/mic/.test(await p.textContent('#mics')), 'mic count shown');
+  assert((await p.$$('.key')).length === 4, 'four keys');
+  // The fake mic beeps; each beep is a "tap" that should fill a training dot.
+  await p.waitForFunction(() => document.querySelectorAll('.dots i.on').length >= 2 || /spot 2/.test(document.getElementById('prompt').textContent), null, { timeout: 30000 });
+  await p.screenshot({ path: out + 'tap-train.png' });
+  assert(!errs.length, errs.join('\n'));
+  await ctx.close();
+});
+
 await browser.close();
 
 await check('denied permissions show a clear message and allow retry', async () => {

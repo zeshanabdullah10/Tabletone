@@ -1,17 +1,21 @@
 // Service worker: cache-first for the app shell, MediaPipe WASM and the hand model.
 // Bump VERSION on every release so phones pick up the update.
-const VERSION = 'mirror-piano-v1.0.0';
+const VERSION = 'mirror-piano-v1.3.0';
 const ASSETS = [
   './',
   './index.html',
+  './tap.html',
   './style.css',
+  './tap.css',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './src/main.js',
+  './src/tap-main.js',
   './src/camera.js',
   './src/hands.js',
+  './src/tracks.js',
   './src/keyboard.js',
   './src/render.js',
   './src/audio-in.js',
@@ -19,6 +23,8 @@ const ASSETS = [
   './src/fusion.js',
   './src/synth.js',
   './src/debug.js',
+  './src/tap/features.js',
+  './src/tap/classifier.js',
   './vendor/mediapipe/vision_bundle.mjs',
   './vendor/mediapipe/wasm/vision_wasm_internal.js',
   './vendor/mediapipe/wasm/vision_wasm_internal.wasm',
